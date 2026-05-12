@@ -1,0 +1,68 @@
+[user@sahara ~]$ python3 evaluate.py
+KNN Fold 1: Accuracy = 0.6429, F1 = 0.3750
+KNN Fold 2: Accuracy = 0.6786, F1 = 0.4000
+KNN Fold 3: Accuracy = 0.6429, F1 = 0.5000
+KNN Fold 4: Accuracy = 0.5926, F1 = 0.2667
+KNN Fold 5: Accuracy = 0.5556, F1 = 0.3333
+KNN Fold 6: Accuracy = 0.6296, F1 = 0.4444
+KNN Fold 7: Accuracy = 0.6667, F1 = 0.4706
+KNN Fold 8: Accuracy = 0.8148, F1 = 0.7059
+KNN Fold 9: Accuracy = 0.5556, F1 = 0.4000
+KNN Fold 10: Accuracy = 0.5556, F1 = 0.3333
+
+===== KNN Average Results =====
+Accuracy:  0.6335
+Precision: 0.4441
+Recall:    0.4111
+F1-score:  0.4229
+
+Decision Tree Fold 1: Accuracy = 0.6429, F1 = 0.3750
+Decision Tree Fold 2: Accuracy = 0.6071, F1 = 0.4762
+Decision Tree Fold 3: Accuracy = 0.5714, F1 = 0.4545
+Decision Tree Fold 4: Accuracy = 0.6667, F1 = 0.5263
+Decision Tree Fold 5: Accuracy = 0.6667, F1 = 0.4706
+Decision Tree Fold 6: Accuracy = 0.5185, F1 = 0.4800
+Decision Tree Fold 7: Accuracy = 0.7407, F1 = 0.6316
+Decision Tree Fold 8: Accuracy = 0.8148, F1 = 0.7059
+Decision Tree Fold 9: Accuracy = 0.6296, F1 = 0.5000
+Decision Tree Fold 10: Accuracy = 0.5185, F1 = 0.2353
+
+===== Decision Tree Average Results =====
+Accuracy:  0.6377
+Precision: 0.4659
+Recall:    0.5222
+F1-score:  0.4855
+
+KNN+ Fold 1: Accuracy = 0.6429, F1 = 0.3750
+KNN+ Fold 2: Accuracy = 0.7143, F1 = 0.3333
+KNN+ Fold 3: Accuracy = 0.3929, F1 = 0.0000
+KNN+ Fold 4: Accuracy = 0.5556, F1 = 0.0000
+KNN+ Fold 5: Accuracy = 0.6667, F1 = 0.1818
+KNN+ Fold 6: Accuracy = 0.7037, F1 = 0.5000
+KNN+ Fold 7: Accuracy = 0.6667, F1 = 0.4000
+KNN+ Fold 8: Accuracy = 0.7407, F1 = 0.5333
+KNN+ Fold 9: Accuracy = 0.6667, F1 = 0.4000
+KNN+ Fold 10: Accuracy = 0.7037, F1 = 0.5000
+
+===== KNN+ Average Results =====
+Accuracy:  0.6454
+Precision: 0.4405
+Recall:    0.2667
+F1-score:  0.3223
+
+Decision Tree+ Fold 1: Accuracy = 0.6786, F1 = 0.0000
+Decision Tree+ Fold 2: Accuracy = 0.7500, F1 = 0.3636
+Decision Tree+ Fold 3: Accuracy = 0.6786, F1 = 0.4000
+Decision Tree+ Fold 4: Accuracy = 0.6667, F1 = 0.0000
+Decision Tree+ Fold 5: Accuracy = 0.6667, F1 = 0.4706
+Decision Tree+ Fold 6: Accuracy = 0.6667, F1 = 0.0000
+Decision Tree+ Fold 7: Accuracy = 0.6667, F1 = 0.0000
+Decision Tree+ Fold 8: Accuracy = 0.6667, F1 = 0.0000
+Decision Tree+ Fold 9: Accuracy = 0.6667, F1 = 0.3077
+Decision Tree+ Fold 10: Accuracy = 0.7407, F1 = 0.4615
+
+===== Decision Tree+ Average Results =====
+Accuracy:  0.6848
+Precision: 0.3250
+Recall:    0.1556
+F1-score:  0.2003
