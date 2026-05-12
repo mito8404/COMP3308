@@ -1,0 +1,210 @@
+import math
+
+
+def classify_knn(training_filename, testing_filename, k):
+    # Read training data
+    training_data = []
+    with open(training_filename, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                training_data.append(line.split(','))
+
+    # Read testing data
+    testing_data = []
+    with open(testing_filename, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                testing_data.append(line.split(','))
+
+    # All columns are nominal; last column is the class label
+    num_attributes = len(training_data[0]) - 1
+    predictions = []
+
+    for test_instance in testing_data:
+        # Calculate Euclidean distance to every training instance
+        # For nominal attributes: distance per attribute = 0 if match, 1 if mismatch
+        distances = []
+        for row_index, train_instance in enumerate(training_data):
+            mismatch_count = 0
+            for i in range(num_attributes):
+                if test_instance[i] != train_instance[i]:
+                    mismatch_count += 1
+            dist = math.sqrt(mismatch_count)
+            distances.append((dist, row_index, train_instance[-1]))
+
+        # Sort by distance, then by row index (for tie-breaking)
+        distances.sort(key=lambda x: (x[0], x[1]))
+
+        # Select k nearest neighbours
+        neighbours = distances[:k]
+
+        # Count votes for each class
+        class_votes = {}
+        for _, _, class_label in neighbours:
+            class_votes[class_label] = class_votes.get(class_label, 0) + 1
+
+        # Determine prediction; if tie, predict "died"
+        max_votes = max(class_votes.values())
+        candidates = [cls for cls, count in class_votes.items() if count == max_votes]
+
+        if len(candidates) == 1:
+            predictions.append(candidates[0])
+        else:
+            # Voting tie: predict "died"
+            predictions.append("died")
+
+    return predictions
+
+
+# ---------------------------------------------------------------------------
+# Decision Tree Classifier
+# ---------------------------------------------------------------------------
+
+ATTR_NAMES = [
+    "age", "anaemia", "CPK", "diabetes", "ejection_fraction",
+    "high_blood_pressure", "platelets", "serum_creatinine",
+    "serum_sodium", "sex", "smoking",
+]
+
+
+def _read_csv(filename):
+    data = []
+    with open(filename, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                data.append(line.split(','))
+    return data
+
+
+def _entropy(instances):
+    total = len(instances)
+    if total == 0:
+        return 0.0
+    counts = {}
+    for row in instances:
+        label = row[-1]
+        counts[label] = counts.get(label, 0) + 1
+    ent = 0.0
+    for count in counts.values():
+        p = count / total
+        if p > 0:
+            ent -= p * math.log2(p)
+    return ent
+
+
+def _majority_class(instances):
+    counts = {}
+    for row in instances:
+        label = row[-1]
+        counts[label] = counts.get(label, 0) + 1
+    if not counts:
+        return "died"
+    max_count = max(counts.values())
+    candidates = [cls for cls, c in counts.items() if c == max_count]
+    if len(candidates) == 1:
+        return candidates[0]
+    return "died"
+
+
+def _information_gain(instances, attr_index):
+    total = len(instances)
+    if total == 0:
+        return 0.0
+    parent_entropy = _entropy(instances)
+    # Partition by attribute value
+    partitions = {}
+    for row in instances:
+        val = row[attr_index]
+        if val not in partitions:
+            partitions[val] = []
+        partitions[val].append(row)
+    # Weighted child entropy
+    child_entropy = 0.0
+    for subset in partitions.values():
+        child_entropy += (len(subset) / total) * _entropy(subset)
+    return parent_entropy - child_entropy
+
+
+def _build_tree(instances, available_attrs):
+    if not instances:
+        return ("leaf", "died")
+
+    # Check if all same class
+    classes = set(row[-1] for row in instances)
+    if len(classes) == 1:
+        return ("leaf", classes.pop())
+
+    # No attributes left to split on
+    if not available_attrs:
+        return ("leaf", _majority_class(instances))
+
+    # Choose attribute with highest information gain
+    best_attr = None
+    best_gain = -1.0
+    for attr_idx in available_attrs:
+        gain = _information_gain(instances, attr_idx)
+        if gain > best_gain:
+            best_gain = gain
+            best_attr = attr_idx
+
+    # If no gain from any attribute, return majority class
+    if best_gain <= 0.0:
+        return ("leaf", _majority_class(instances))
+
+    # Split on best attribute
+    remaining = [a for a in available_attrs if a != best_attr]
+    partitions = {}
+    for row in instances:
+        val = row[best_attr]
+        if val not in partitions:
+            partitions[val] = []
+        partitions[val].append(row)
+
+    # Build child subtrees
+    children = {}
+    for val, subset in partitions.items():
+        children[val] = _build_tree(subset, remaining)
+
+    # Store the parent majority class for unseen attribute values at prediction
+    return ("node", best_attr, children, _majority_class(instances))
+
+
+def _predict(tree, instance):
+    if tree[0] == "leaf":
+        return tree[1]
+    # tree = ("node", attr_index, children_dict, default_class)
+    _, attr_idx, children, default_class = tree
+    val = instance[attr_idx]
+    if val in children:
+        return _predict(children[val], instance)
+    else:
+        # Unseen attribute value: use the majority class at this node
+        return default_class
+
+
+def print_tree(tree, indent=0):
+    prefix = "  " * indent
+    if tree[0] == "leaf":
+        print(f"{prefix}-> {tree[1]}")
+        return
+    _, attr_idx, children, _ = tree
+    attr_name = ATTR_NAMES[attr_idx] if attr_idx < len(ATTR_NAMES) else str(attr_idx)
+    for val, subtree in children.items():
+        print(f"{prefix}{attr_name} = {val}:")
+        print_tree(subtree, indent + 1)
+
+
+def classify_dt(training_filename, testing_filename):
+    training_data = _read_csv(training_filename)
+    testing_data = _read_csv(testing_filename)
+
+    num_attrs = len(training_data[0]) - 1
+    available_attrs = list(range(num_attrs))
+
+    tree = _build_tree(training_data, available_attrs)
+
+    predictions = [_predict(tree, instance) for instance in testing_data]
+    return predictions
