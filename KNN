@@ -1,0 +1,58 @@
+import math
+
+
+def classify_knn(training_filename, testing_filename, k):
+    # Read training data
+    training_data = []
+    with open(training_filename, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                training_data.append(line.split(','))
+
+    # Read testing data
+    testing_data = []
+    with open(testing_filename, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                testing_data.append(line.split(','))
+
+    # All columns are nominal; last column is the class label
+    num_attributes = len(training_data[0]) - 1
+    predictions = []
+
+    for test_instance in testing_data:
+        # Calculate Euclidean distance to every training instance
+        # For nominal attributes: distance per attribute = 0 if match, 1 if mismatch
+        distances = []
+        for row_index, train_instance in enumerate(training_data):
+            mismatch_count = 0
+            for i in range(num_attributes):
+                if test_instance[i] != train_instance[i]:
+                    mismatch_count += 1
+            dist = math.sqrt(mismatch_count)
+            distances.append((dist, row_index, train_instance[-1]))
+
+        # Sort by distance, then by row index (for tie-breaking)
+        distances.sort(key=lambda x: (x[0], x[1]))
+
+        # Select k nearest neighbours
+        neighbours = distances[:k]
+
+        # Count votes for each class
+        class_votes = {}
+        for _, _, class_label in neighbours:
+            class_votes[class_label] = class_votes.get(class_label, 0) + 1
+
+        # Determine prediction; if tie, predict "died"
+        max_votes = max(class_votes.values())
+        candidates = [cls for cls, count in class_votes.items() if count == max_votes]
+
+        if len(candidates) == 1:
+            predictions.append(candidates[0])
+        else:
+            # Voting tie: predict "died"
+            predictions.append("died")
+
+    return predictions
