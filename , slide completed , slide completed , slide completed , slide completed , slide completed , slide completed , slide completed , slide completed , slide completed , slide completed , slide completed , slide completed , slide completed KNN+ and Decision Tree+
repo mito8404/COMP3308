@@ -1,0 +1,366 @@
+import csv
+import math
+from collections import Counter
+ 
+ 
+# =============================================================================
+# Ordinal mappings for features with natural ordering
+# =============================================================================
+ 
+ORDINAL_MAPS = {
+    0: {'[40-50]': 0, '[51-60]': 1, '[61-70]': 2, '70plus': 3},          # age
+    2: {'normal': 0, 'high': 1, 'very-high': 2, 'severely-high': 3},     # CPK
+    4: {'low': 0, 'mildly-low': 1, 'borderline': 2, 'normal': 3},        # ejection_fraction
+    6: {'low': 0, 'normal': 1, 'high': 2, 'very-high': 3},               # platelets
+    7: {'low': 0, 'normal': 1, 'high': 2},                                # serum_creatinine
+    8: {'low': 0, 'normal': 1, 'high': 2},                                # serum_sodium
+}
+ 
+ 
+# =============================================================================
+# Data loading
+# =============================================================================
+ 
+def load_data(filename):
+    with open(filename, 'r') as f:
+        reader = csv.reader(f)
+        rows = list(reader)
+ 
+    if not rows:
+        return []
+ 
+    # Skip header if present
+    first = rows[0]
+    if any(v.strip().lower() in ('class', 'age', 'sex', 'smoking') for v in first):
+        rows = rows[1:]
+ 
+    data = []
+    for row in rows:
+        features = [v.strip() for v in row[:-1]]
+        label = row[-1].strip()
+        data.append((features, label))
+    return data
+ 
+ 
+# =============================================================================
+# KNN+ : Distance-Weighted KNN with Ordinal-Aware Distance
+# =============================================================================
+ 
+def compute_distance(a, b, num_features, max_ordinal_range):
+    total = 0.0
+    for i in range(num_features):
+        if i in ORDINAL_MAPS:
+            omap = ORDINAL_MAPS[i]
+            rank_a = omap.get(a[i])
+            rank_b = omap.get(b[i])
+            if rank_a is not None and rank_b is not None:
+                # Normalised ordinal distance
+                total += (abs(rank_a - rank_b) / max_ordinal_range[i]) ** 2
+            else:
+                # Unknown value — treat as maximally different
+                total += 1.0
+        else:
+            # Pure nominal: 0 if same, 1 if different
+            total += 0.0 if a[i] == b[i] else 1.0
+    return math.sqrt(total)
+ 
+ 
+def classify_knnplus(training_filename, testing_filename, k):
+    train_data = load_data(training_filename)
+    test_data = load_data(testing_filename)
+ 
+    if not train_data or not test_data:
+        return []
+ 
+    num_features = len(train_data[0][0])
+ 
+    # Precompute max ordinal ranges for normalisation
+    max_ordinal_range = {}
+    for feat_idx, omap in ORDINAL_MAPS.items():
+        if feat_idx < num_features:
+            vals = list(omap.values())
+            max_ordinal_range[feat_idx] = max(vals) - min(vals) if len(vals) > 1 else 1
+ 
+    epsilon = 1e-8
+ 
+    predictions = []
+    for test_features, _ in test_data:
+        # Compute distances to all training examples
+        distances = []
+        for train_features, train_label in train_data:
+            d = compute_distance(test_features, train_features, num_features, max_ordinal_range)
+            distances.append((d, train_label))
+ 
+        # Sort by distance, then by label for deterministic ordering
+        distances.sort(key=lambda x: (x[0], x[1]))
+ 
+        # Take k nearest
+        k_nearest = distances[:k]
+ 
+        # Distance-weighted voting
+        weighted_votes = Counter()
+        for d, label in k_nearest:
+            weight = 1.0 / (d + epsilon)
+            weighted_votes[label] += weight
+ 
+        # Find winner
+        max_weight = max(weighted_votes.values())
+        top_classes = [cls for cls, w in weighted_votes.items()
+                       if abs(w - max_weight) < epsilon]
+ 
+        if len(top_classes) == 1:
+            predictions.append(top_classes[0])
+        else:
+            # Tie-break: nearest neighbour wins
+            predictions.append(k_nearest[0][1])
+ 
+    return predictions
+ 
+ 
+# =============================================================================
+# DT+ : Decision Tree with Gain Ratio + Reduced-Error Pruning
+# =============================================================================
+ 
+def entropy(labels):
+    total = len(labels)
+    if total == 0:
+        return 0.0
+    counts = Counter(labels)
+    ent = 0.0
+    for count in counts.values():
+        p = count / total
+        if p > 0:
+            ent -= p * math.log2(p)
+    return ent
+ 
+ 
+def compute_gain_and_split_info(data, feat_idx):
+    labels = [label for _, label in data]
+    parent_entropy = entropy(labels)
+    total = len(data)
+ 
+    # Partition by attribute value
+    partitions = {}
+    for feat, label in data:
+        val = feat[feat_idx]
+        partitions.setdefault(val, []).append(label)
+ 
+    # Weighted child entropy
+    child_entropy = 0.0
+    for subset in partitions.values():
+        child_entropy += (len(subset) / total) * entropy(subset)
+ 
+    gain = parent_entropy - child_entropy
+ 
+    # Split information
+    split_info = 0.0
+    for subset in partitions.values():
+        p = len(subset) / total
+        if p > 0:
+            split_info -= p * math.log2(p)
+ 
+    return gain, split_info
+ 
+ 
+class DTNode:
+    def __init__(self):
+        self.is_leaf = False
+        self.label = None
+        self.feature_idx = None
+        self.children = {}          # {attribute_value: DTNode}
+        self.majority_class = None
+        self.data_count = 0
+ 
+ 
+def build_tree(data, available_features, depth=0, max_depth=30):
+    node = DTNode()
+    labels = [label for _, label in data]
+    node.data_count = len(data)
+ 
+    if not labels:
+        node.is_leaf = True
+        node.label = 'died'  # default
+        node.majority_class = 'died'
+        return node
+ 
+    label_counts = Counter(labels)
+    node.majority_class = label_counts.most_common(1)[0][0]
+ 
+    # Pure node
+    if len(label_counts) == 1:
+        node.is_leaf = True
+        node.label = labels[0]
+        return node
+ 
+    # No features left or max depth
+    if not available_features or depth >= max_depth:
+        node.is_leaf = True
+        node.label = node.majority_class
+        return node
+ 
+    # Select best attribute using Gain Ratio
+    best_ratio = -1
+    best_feat = None
+ 
+    # First pass: compute gains
+    gains = {}
+    split_infos = {}
+    for feat_idx in available_features:
+        gain, split_info = compute_gain_and_split_info(data, feat_idx)
+        gains[feat_idx] = gain
+        split_infos[feat_idx] = split_info
+ 
+    avg_gain = sum(gains.values()) / len(gains) if gains else 0
+ 
+    # Second pass: among features with gain >= average, pick highest gain ratio
+    # (C4.5 heuristic to avoid gain ratio selecting low-gain attributes)
+    for feat_idx in available_features:
+        gain = gains[feat_idx]
+        split_info = split_infos[feat_idx]
+ 
+        if gain < avg_gain:
+            continue
+ 
+        ratio = gain / split_info if split_info > 0 else 0.0
+ 
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_feat = feat_idx
+ 
+    # Fallback: if no feature passed the avg_gain threshold, pick highest gain
+    if best_feat is None:
+        best_feat = max(available_features, key=lambda f: gains[f])
+        if gains[best_feat] <= 0:
+            node.is_leaf = True
+            node.label = node.majority_class
+            return node
+ 
+    node.feature_idx = best_feat
+ 
+    # Partition data by attribute value
+    partitions = {}
+    for feat, label in data:
+        val = feat[best_feat]
+        partitions.setdefault(val, []).append((feat, label))
+ 
+    remaining_features = [f for f in available_features if f != best_feat]
+ 
+    for val, subset in partitions.items():
+        node.children[val] = build_tree(subset, remaining_features, depth + 1, max_depth)
+ 
+    # If only one child, make leaf
+    if len(node.children) <= 1:
+        node.is_leaf = True
+        node.label = node.majority_class
+        return node
+ 
+    return node
+ 
+ 
+def predict_one(node, features):
+    if node.is_leaf:
+        return node.label
+ 
+    feat_val = features[node.feature_idx]
+    child = node.children.get(feat_val)
+ 
+    if child is None:
+        # Unseen attribute value: return majority class
+        return node.majority_class
+ 
+    return predict_one(child, features)
+ 
+ 
+def tree_accuracy(node, data):
+    if not data:
+        return 0.0
+    correct = sum(1 for feat, label in data if predict_one(node, feat) == label)
+    return correct / len(data)
+ 
+ 
+def get_all_internal_nodes(node, nodes=None):
+    if nodes is None:
+        nodes = []
+    if node.is_leaf:
+        return nodes
+    for child in node.children.values():
+        get_all_internal_nodes(child, nodes)
+    nodes.append(node)
+    return nodes
+ 
+ 
+def prune_tree(root, validation_data):
+    if not validation_data:
+        return
+ 
+    changed = True
+    while changed:
+        changed = False
+        internal_nodes = get_all_internal_nodes(root)
+ 
+        current_acc = tree_accuracy(root, validation_data)
+ 
+        best_node_to_prune = None
+        best_acc_after = current_acc
+ 
+        for node in internal_nodes:
+            if node.is_leaf:
+                continue
+ 
+            # Temporarily prune
+            saved_is_leaf = node.is_leaf
+            saved_label = node.label
+            saved_children = node.children
+ 
+            node.is_leaf = True
+            node.label = node.majority_class
+            node.children = {}
+ 
+            new_acc = tree_accuracy(root, validation_data)
+ 
+            if new_acc >= best_acc_after:
+                best_acc_after = new_acc
+                best_node_to_prune = node
+ 
+            # Restore
+            node.is_leaf = saved_is_leaf
+            node.label = saved_label
+            node.children = saved_children
+ 
+        # Apply the best pruning if it doesn't hurt
+        if best_node_to_prune is not None and best_acc_after >= current_acc:
+            best_node_to_prune.is_leaf = True
+            best_node_to_prune.label = best_node_to_prune.majority_class
+            best_node_to_prune.children = {}
+            changed = True
+ 
+ 
+def classify_dtplus(training_filename, testing_filename):
+    train_data = load_data(training_filename)
+    test_data = load_data(testing_filename)
+ 
+    if not train_data or not test_data:
+        return []
+ 
+    num_features = len(train_data[0][0])
+    available_features = list(range(num_features))
+ 
+    # Split training data: 80% build, 20% validation for pruning
+    split_idx = int(len(train_data) * 0.8)
+    if split_idx > 0 and split_idx < len(train_data):
+        build_data = train_data[:split_idx]
+        val_data = train_data[split_idx:]
+    else:
+        build_data = train_data
+        val_data = []
+ 
+    # Build tree using Gain Ratio
+    root = build_tree(build_data, available_features)
+ 
+    # Prune using validation set
+    if val_data:
+        prune_tree(root, val_data)
+ 
+    # Classify test examples
+    predictions = [predict_one(root, feat) for feat, _ in test_data]
+    return predictions
